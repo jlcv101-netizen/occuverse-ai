@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -48,7 +49,165 @@ const upload = multer({
 const users = {};
 const chats = {};
 
-// Auth endpoints
+// ==================== WEATHER API ====================
+
+app.get('/api/weather', async (req, res) => {
+  try {
+    const { city, unit = 'metric' } = req.query;
+
+    if (!city) {
+      return res.status(400).json({ error: 'City is required' });
+    }
+
+    // Using Open-Meteo API (free, no API key required)
+    const geoResponse = await axios.get('https://geocoding-api.open-meteo.com/v1/search', {
+      params: {
+        name: city,
+        count: 1,
+        language: 'en',
+        format: 'json'
+      }
+    });
+
+    if (!geoResponse.data.results || geoResponse.data.results.length === 0) {
+      return res.status(404).json({ error: 'City not found' });
+    }
+
+    const { latitude, longitude, name, country } = geoResponse.data.results[0];
+
+    // Get weather data
+    const weatherResponse = await axios.get('https://api.open-meteo.com/v1/forecast', {
+      params: {
+        latitude,
+        longitude,
+        current: 'temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,cloud_cover,pressure_msl',
+        daily: 'temperature_2m_max,temperature_2m_min,weather_code,relative_humidity_2m_max,wind_speed_10m_max',
+        timezone: 'auto',
+        temperature_unit: unit === 'metric' ? 'celsius' : 'fahrenheit',
+        wind_speed_unit: unit === 'metric' ? 'kmh' : 'mph'
+      }
+    });
+
+    const current = weatherResponse.data.current;
+    const daily = weatherResponse.data.daily;
+
+    const getWeatherDescription = (code) => {
+      const codes = {
+        0: 'Clear sky',
+        1: 'Mainly clear',
+        2: 'Partly cloudy',
+        3: 'Overcast',
+        45: 'Foggy',
+        48: 'Foggy rime',
+        51: 'Light drizzle',
+        53: 'Moderate drizzle',
+        55: 'Dense drizzle',
+        61: 'Slight rain',
+        63: 'Moderate rain',
+        65: 'Heavy rain',
+        71: 'Slight snow',
+        73: 'Moderate snow',
+        75: 'Heavy snow',
+        77: 'Snow grains',
+        80: 'Slight rain showers',
+        81: 'Moderate rain showers',
+        82: 'Violent rain showers',
+        85: 'Slight snow showers',
+        86: 'Heavy snow showers',
+        95: 'Thunderstorm',
+        96: 'Thunderstorm with hail',
+        99: 'Thunderstorm with heavy hail'
+      };
+      return codes[code] || 'Unknown';
+    };
+
+    const currentWeather = {
+      temp: current.temperature_2m,
+      feelsLike: current.temperature_2m,
+      humidity: current.relative_humidity_2m,
+      description: getWeatherDescription(current.weather_code),
+      windSpeed: current.wind_speed_10m,
+      pressure: Math.round(current.pressure_msl),
+      visibility: 10000,
+      clouds: current.cloud_cover
+    };
+
+    const forecast = [];
+    if (daily.time) {
+      for (let i = 0; i < Math.min(5, daily.time.length); i++) {
+        forecast.push({
+          date: new Date(daily.time[i]).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+          tempMax: daily.temperature_2m_max[i],
+          tempMin: daily.temperature_2m_min[i],
+          description: getWeatherDescription(daily.weather_code[i]),
+          humidity: daily.relative_humidity_2m_max[i],
+          windSpeed: daily.wind_speed_10m_max[i]
+        });
+      }
+    }
+
+    res.json({
+      location: `${name}, ${country}`,
+      current: currentWeather,
+      forecast
+    });
+  } catch (error) {
+    console.error('Weather API error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch weather data' });
+  }
+});
+
+// ==================== JOKES API ====================
+
+app.get('/api/jokes/random', async (req, res) => {
+  try {
+    const { type = 'random' } = req.query;
+
+    let jokeData;
+
+    if (type === 'programming') {
+      const response = await axios.get('https://official-joke-api.appspot.com/jokes/programming/random');
+      jokeData = {
+        setup: response.data.setup,
+        punchline: response.data.delivery || response.data.punchline,
+        type: 'programming',
+        category: response.data.category
+      };
+    } else if (type === 'knock-knock') {
+      const response = await axios.get('https://official-joke-api.appspot.com/jokes/knock-knock/random');
+      jokeData = {
+        setup: response.data.setup,
+        punchline: response.data.delivery || response.data.punchline,
+        type: 'knock-knock',
+        category: response.data.category
+      };
+    } else if (type === 'general') {
+      const response = await axios.get('https://official-joke-api.appspot.com/random_joke');
+      jokeData = {
+        setup: response.data.setup,
+        punchline: response.data.delivery || response.data.punchline,
+        type: response.data.type,
+        category: response.data.category
+      };
+    } else {
+      const response = await axios.get('https://official-joke-api.appspot.com/random_joke');
+      jokeData = {
+        setup: response.data.setup,
+        punchline: response.data.delivery || response.data.punchline,
+        type: response.data.type,
+        category: response.data.category
+      };
+    }
+
+    res.json(jokeData);
+  } catch (error) {
+    console.error('Jokes API error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch joke. Please try again.' });
+  }
+});
+
+// ==================== AUTH ENDPOINTS ====================
+
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -92,7 +251,8 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Profile endpoints
+// ==================== PROFILE ENDPOINTS ====================
+
 app.post('/api/profile/upload', upload.single('profilePicture'), (req, res) => {
   try {
     const { email } = req.body;
@@ -119,7 +279,8 @@ app.get('/api/profile/:email', (req, res) => {
   }
 });
 
-// Chat endpoints
+// ==================== CHAT ENDPOINTS ====================
+
 app.post('/api/chat', (req, res) => {
   try {
     const { userId, message } = req.body;
@@ -149,7 +310,8 @@ app.get('/api/chat/:userId', (req, res) => {
   }
 });
 
-// Image generation
+// ==================== IMAGE GENERATION ====================
+
 app.post('/api/generate-image', (req, res) => {
   try {
     const { prompt } = req.body;
@@ -161,7 +323,8 @@ app.post('/api/generate-image', (req, res) => {
   }
 });
 
-// Code generation
+// ==================== CODE GENERATION ====================
+
 app.post('/api/generate-code', (req, res) => {
   try {
     const { description, language } = req.body;
@@ -172,6 +335,8 @@ app.post('/api/generate-code', (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ==================== HEALTH CHECK ====================
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OccuVerse AI is running' });
