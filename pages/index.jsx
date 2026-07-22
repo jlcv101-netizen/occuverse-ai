@@ -3,6 +3,7 @@ import Chat from '../components/Chat';
 import ProfileUpload from '../components/ProfileUpload';
 import JokeGenerator from '../components/JokeGenerator';
 import WeatherDashboard from '../components/WeatherDashboard';
+import DigitalClock from '../components/DigitalClock';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -39,6 +40,7 @@ export default function Home() {
       <div className="tabs">
         <button className={`tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>💬 Chat</button>
         <button className={`tab ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>👤 Profile</button>
+        <button className={`tab ${activeTab === 'clock' ? 'active' : ''}`} onClick={() => setActiveTab('clock')}>🕐 Clock</button>
         <button className={`tab ${activeTab === 'weather' ? 'active' : ''}`} onClick={() => setActiveTab('weather')}>🌦️ Weather</button>
         <button className={`tab ${activeTab === 'jokes' ? 'active' : ''}`} onClick={() => setActiveTab('jokes')}>😂 Jokes</button>
         <button className={`tab ${activeTab === 'generate' ? 'active' : ''}`} onClick={() => setActiveTab('generate')}>🎨 Generate</button>
@@ -56,6 +58,7 @@ export default function Home() {
             <ProfileUpload userEmail={user.email} onSuccess={handleProfileUploadSuccess} />
           </div>
         )}
+        {activeTab === 'clock' && <DigitalClock />}
         {activeTab === 'weather' && <WeatherDashboard />}
         {activeTab === 'jokes' && <JokeGenerator />}
         {activeTab === 'generate' && (
